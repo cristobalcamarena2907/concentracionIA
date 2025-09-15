@@ -5,7 +5,7 @@ Este proyecto implementa un modelo de **Regresión Lineal** para el dataset **Ca
 1. **Con librerías (scikit-learn)** → más práctico y eficiente.  
 2. **From scratch (NumPy puro)** → implementado manualmente para entender la matemática detrás.
 
-Ambos modelos muestran métricas de evaluación y gráficas de diagnóstico (se abren en pantalla, no se guardan).
+Ambos modelos muestran métricas de evaluación y gráficas de diagnóstico.
 
 ---
 

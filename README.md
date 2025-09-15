@@ -20,7 +20,14 @@ source .venv/bin/activate     # macOS / Linux
 # .venv\Scripts\Activate.ps1
 
 pip install numpy pandas matplotlib scikit-learn
+```
+1. Modelo con librerías
 
+```
 python sklearn.py --model ridge --alpha 5.0 --standardize
+```
 
+2. Modelo sin librerías
+```
 python scratch.py --use-sklearn-data --solver normal_equation --standardize
+```

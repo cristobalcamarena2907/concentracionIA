@@ -1,307 +1,200 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Regresión lineal multivariable DESDE CERO (sin numpy/pandas/ML)
-- Descenso de gradiente con L2 opcional
-- Estandarización manual de features numéricas
-- Carga CSV del dataset COVID-19 (Gobierno de México)
-- Objetivo: riesgo continuo basado en DATA_DIED (1 si != '9999-99-99', 0 en otro caso)
-- Métricas: MAE, RMSE, R^2
-- Uso:
-    python3 regresion_lineal_desde_cero.py --csv Covid-Data.csv --test-size 0.2 \
-        --lr 0.05 --epochs 80 --l2 0.0 --seed 42 --save-preds preds.csv
-"""
-import csv, math, random, argparse, sys, os
 
-# -------------------- Utilidades simples --------------------
-def sigmoid(x):  # por si quieres activar salida, pero por defecto NO la uso
-    if x >= 0:
-        z = math.exp(-x)
-        return 1.0 / (1.0 + z)
-    else:
-        z = math.exp(x)
-        return z / (1.0 + z)
+import argparse, itertools
+import numpy as np, pandas as pd, matplotlib.pyplot as plt
+from typing import Dict, List, Optional, Tuple
 
-def mean(xs):
-    return sum(xs)/len(xs) if xs else 0.0
 
-def stdev(xs):
-    m = mean(xs)
-    var = sum((x-m)*(x-m) for x in xs) / (len(xs)-1 if len(xs)>1 else 1)
-    return math.sqrt(var)
+# ===== Escalado scratch =====
+class StandardScalerScratch:
+    def __init__(self): self.mean_=None; self.std_=None
+    def fit(self, X): self.mean_=X.mean(axis=0); self.std_=X.std(axis=0, ddof=0); self.std_[self.std_==0]=1.0; return self
+    def transform(self, X): return (X - self.mean_) / self.std_
+    def fit_transform(self, X): return self.fit(X).transform(X)
 
-def train_test_split(X, y, test_size=0.2, seed=42):
-    rnd = random.Random(seed)
-    idx = list(range(len(X)))
-    rnd.shuffle(idx)
-    n_test = int(len(X)*test_size)
-    test_idx = set(idx[:n_test])
-    Xtr, ytr, Xte, yte = [], [], [], []
-    for i in range(len(X)):
-        if i in test_idx:
-            Xte.append(X[i]); yte.append(y[i])
-        else:
-            Xtr.append(X[i]); ytr.append(y[i])
-    return Xtr, ytr, Xte, yte
 
-# -------------------- Preprocesamiento --------------------
-BOOL_MAYBE = {"1":1.0, 1:1.0, "2":0.0, 2:0.0, "97":0.0, 97:0.0, "98":0.0, 98:0.0, "99":0.0, 99:0.0, "":0.0}
-INT_OR_ZERO = lambda v: float(v) if isinstance(v,(int,float)) or (isinstance(v,str) and v.isdigit()) else 0.0
+# ===== Polinomios =====
+def polynomial_features(X: np.ndarray, feature_names: List[str], degree: int) -> Tuple[np.ndarray, List[str]]:
+    if degree <= 1: return X, feature_names[:]
+    cols = [X[:, j] for j in range(X.shape[1])]; names = feature_names[:]
+    for deg in range(2, degree+1):
+        for comb in itertools.combinations_with_replacement(range(X.shape[1]), deg):
+            X = np.column_stack([X, np.prod([cols[j] for j in comb], axis=0)])
+            names.append("*".join([feature_names[j] for j in comb]))
+    return X, names
 
-def parse_bool(v):
-    return BOOL_MAYBE.get(v, BOOL_MAYBE.get(str(v), 0.0))
 
-def parse_age(v):
+def train_test_split_scratch(X, y, test_size=0.2, random_state=42):
+    rng = np.random.default_rng(random_state); n = X.shape[0]
+    idx = np.arange(n); rng.shuffle(idx)
+    n_test = int(np.floor(test_size*n))
+    te, tr = idx[:n_test], idx[n_test:]
+    return X[tr], X[te], y[tr], y[te]
+
+
+# ===== Modelo lineal scratch =====
+class LinearRegressionScratch:
+    def __init__(self, solver="normal_equation", lr=1e-2, epochs=1000, tol=1e-8, verbose=False):
+        self.solver, self.lr, self.epochs, self.tol, self.verbose = solver, lr, epochs, tol, verbose
+        self.theta_ = None
+    @staticmethod
+    def _add_bias(X): return np.column_stack([np.ones((X.shape[0],1)), X])
+    def fit(self, X, y):
+        Xb = self._add_bias(X)
+        if self.solver == "normal_equation":
+            self.theta_ = np.linalg.pinv(Xb.T @ Xb) @ Xb.T @ y
+        elif self.solver == "gd":
+            rng = np.random.default_rng(42); self.theta_ = rng.normal(0,0.01,size=Xb.shape[1]); prev = np.inf
+            for it in range(self.epochs):
+                r = Xb@self.theta_ - y; loss = (r@r)/Xb.shape[0]
+                grad = (2.0/Xb.shape[0])*(Xb.T@r); self.theta_ -= self.lr*grad
+                if self.verbose and it % max(1,self.epochs//10)==0: print(f"[GD] it={it} MSE={loss:.6f}")
+                if abs(prev-loss) < self.tol: break; prev=loss
+        else: raise ValueError("solver inválido")
+        return self
+    def predict(self, X): return self._add_bias(X) @ self.theta_
+    def coef_(self): return self.theta_[1:]
+    def intercept_(self): return float(self.theta_[0])
+
+
+# ===== Métricas =====
+def evaluate(y, yhat):
+    mse = float(np.mean((y-yhat)**2)); rmse=float(np.sqrt(mse)); mae=float(np.mean(np.abs(y-yhat)))
+    ss_res=float(np.sum((y-yhat)**2)); ss_tot=float(np.sum((y-np.mean(y))**2))
+    r2 = 1.0 - ss_res/ss_tot if ss_tot>0 else float("nan")
+    return {"MSE":mse,"RMSE":rmse,"MAE":mae,"R2":r2}
+
+
+# ===== Gráficas (show) =====
+def plot_parity(y, yhat):
+    plt.figure(); plt.scatter(y, yhat, alpha=0.4)
+    lims=[min(y.min(),yhat.min()), max(y.max(),yhat.max())]; plt.plot(lims, lims)
+    plt.xlabel("Valor real (y)"); plt.ylabel("Predicción (ŷ)"); plt.title("Paridad: y vs. ŷ"); plt.tight_layout(); plt.show()
+
+def plot_residuals_vs_pred(y, yhat):
+    r=y-yhat; plt.figure(); plt.scatter(yhat, r, alpha=0.4); plt.axhline(0)
+    plt.xlabel("Predicción (ŷ)"); plt.ylabel("Residual (y-ŷ)"); plt.title("Residuales vs. Predicción"); plt.tight_layout(); plt.show()
+
+def plot_residual_hist(y, yhat):
+    r=y-yhat; plt.figure(); plt.hist(r,bins=40); plt.xlabel("Residual (y-ŷ)"); plt.ylabel("Frecuencia")
+    plt.title("Histograma de residuales"); plt.tight_layout(); plt.show()
+
+def plot_top_coefficients(coef, names, k=15):
+    idx=np.argsort(np.abs(coef))[::-1][:min(k,len(coef))]; top_names=[names[i] for i in idx]; top_vals=coef[idx]
+    plt.figure(); y_pos=np.arange(len(top_names)); plt.barh(y_pos, top_vals); plt.yticks(y_pos, top_names); plt.gca().invert_yaxis()
+    plt.xlabel("Coeficiente"); plt.title(f"Top {len(top_names)} coeficientes por |peso|"); plt.tight_layout(); plt.show()
+
+def plot_learning_curve_scratch(Xtr, ytr, Xte, yte, solver, lr, epochs, tol, train_sizes=np.linspace(0.1,1.0,8)):
+    n=Xtr.shape[0]; idx=np.arange(n); rng=np.random.default_rng(42); rng.shuffle(idx)
+    Xtr, ytr = Xtr[idx], ytr[idx]
+    rmse_tr, rmse_va = [], []
+    for frac in train_sizes:
+        m=max(5,int(frac*n))
+        model=LinearRegressionScratch(solver=solver, lr=lr, epochs=epochs, tol=tol)
+        model.fit(Xtr[:m], ytr[:m])
+        yhat_tr=model.predict(Xtr[:m]); yhat_va=model.predict(Xte)
+        rmse_tr.append(np.sqrt(np.mean((ytr[:m]-yhat_tr)**2)))
+        rmse_va.append(np.sqrt(np.mean((yte-yhat_va)**2)))
+    plt.figure(); plt.plot(train_sizes*100, rmse_tr, marker="o", label="Train RMSE")
+    plt.plot(train_sizes*100, rmse_va, marker="s", label="Valid RMSE")
+    plt.xlabel("% de datos de entrenamiento"); plt.ylabel("RMSE"); plt.title("Curva de aprendizaje (scratch)")
+    plt.legend(); plt.grid(True, alpha=0.2); plt.tight_layout(); plt.show()
+
+
+# ===== Datos =====
+def load_california_df():
     try:
-        a = float(v)
-        return a if a>=0 and a<=120 else 0.0
-    except:
-        return 0.0
+        from sklearn.datasets import fetch_california_housing
+    except Exception as e:
+        raise RuntimeError("Instala scikit-learn para --use-sklearn-data") from e
+    data = fetch_california_housing(as_frame=True)
+    df = data.frame.copy(); df.rename(columns={data.target_names[0]: "MedHouseVal"}, inplace=True)
+    return df
 
-def died_from_date(date_died):
-    # 1 si falleció (cualquier fecha distinta a 9999-99-99), 0 si no
-    return 0.0 if (date_died is None or str(date_died).strip()=="9999-99-99") else 1.0
+def load_Xy_from_df(df: pd.DataFrame, target: str):
+    if target not in df.columns: raise ValueError(f"Target '{target}' no existe.")
+    y = df[target].to_numpy(dtype=float)
+    X_df = df.drop(columns=[target])
+    return X_df.to_numpy(dtype=float), y, X_df.columns.tolist()
 
-def load_csv_build_xy(path, max_rows=None):
-    """
-    Devuelve X (lista de listas) e y (lista), usando columnas comunes del dataset.
-    No usa numpy/pandas.
-    """
-    if not os.path.exists(path):
-        print(f"[ERROR] No se encontró el archivo: {path}")
-        sys.exit(1)
 
-    # columnas típicas del dataset; si alguna no existe se ignora silenciosamente
-    wanted_cols = [
-        "sex","age","patient_type","pneumonia","pregnancy","diabetes","copd","asthma",
-        "inmsupr","hypertension","cardiovascular","renal_chronic","other_disease",
-        "obesity","tobacco","medical_unit","intubed","icu","classification"
-    ]
-    target_col = "date_died"  # en varios CSV aparece con este nombre exacto
-
-    X, y = [], []
-    with open(path, newline='', encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        count = 0
-        for row in reader:
-            # objetivo desde DATA_DIED/date_died
-            if target_col not in row:
-                # a veces viene como DATA_DIED (mayúsculas)
-                if "DATA_DIED" in row:
-                    row[target_col] = row["DATA_DIED"]
-                else:
-                    # si no existe, saltamos
-                    continue
-            yi = died_from_date(row[target_col])
-            # features
-            feats = []
-            for c in wanted_cols:
-                if c not in row:
-                    feats.append(0.0); continue
-                val = row[c]
-
-                if c == "age":
-                    feats.append(parse_age(val))
-                elif c in ("patient_type","medical_unit","classification"):
-                    # valores categóricos con números pequeños -> lo dejamos como número crudo
-                    try:
-                        feats.append(float(val))
-                    except:
-                        feats.append(0.0)
-                else:
-                    feats.append(parse_bool(val))
-            X.append(feats); y.append(yi)
-            count += 1
-            if max_rows is not None and count >= max_rows:
-                break
-    return X, y, wanted_cols
-
-def standardize_train(X):
-    """
-    Estandariza columnas: z = (x - media)/std. Devuelve Xstd, medias, stds
-    """
-    if not X: return [], [], []
-    n = len(X); d = len(X[0])
-    means = [0.0]*d; stds = [1.0]*d
-
-    # medias
-    for j in range(d):
-        s = 0.0
-        for i in range(n):
-            s += X[i][j]
-        means[j] = s / n
-    # stds
-    for j in range(d):
-        var = 0.0
-        for i in range(n):
-            diff = X[i][j] - means[j]
-            var += diff*diff
-        var /= (n-1) if n>1 else 1
-        stds[j] = math.sqrt(var) if var>1e-12 else 1.0
-    # aplicar
-    Xs = []
-    for i in range(n):
-        row = [(X[i][j] - means[j]) / stds[j] for j in range(d)]
-        Xs.append(row)
-    return Xs, means, stds
-
-def standardize_apply(X, means, stds):
-    Xs = []
-    for i in range(len(X)):
-        row = [(X[i][j]-means[j])/stds[j] for j in range(len(means))]
-        Xs.append(row)
-    return Xs
-
-# -------------------- Modelo: Regresión Lineal (GD) --------------------
-class LinearRegressionGD:
-    def __init__(self, lr=0.05, epochs=100, l2=0.0, seed=42, use_bias=True):
-        self.lr = lr
-        self.epochs = epochs
-        self.l2 = l2
-        self.use_bias = use_bias
-        self.rnd = random.Random(seed)
-        self.w = None   # pesos (incluye bias como w[-1] si use_bias)
-
-    def _init_weights(self, d):
-        self.w = [self.rnd.uniform(-0.5,0.5) for _ in range(d + (1 if self.use_bias else 0))]
-
-    def _dot(self, w, x):
-        s = 0.0
-        D = len(x)
-        for j in range(D):
-            s += w[j]*x[j]
-        if self.use_bias:
-            s += w[-1]  # bias
-        return s
-
-    def predict_row(self, x):
-        return self._dot(self.w, x)
-
-    def predict(self, X):
-        return [self.predict_row(x) for x in X]
-
-    def fit(self, X, y, verbose=True):
-        n = len(X)
-        if n == 0:
-            raise ValueError("X vacío")
-        d = len(X[0])
-        self._init_weights(d)
-
-        for ep in range(1, self.epochs+1):
-            # gradientes acumulados
-            grad = [0.0]*d
-            grad_b = 0.0
-
-            # MSE + L2
-            mse_sum = 0.0
-            for i in range(n):
-                yhat = self._dot(self.w, X[i])
-                err = yhat - y[i]
-                mse_sum += err*err
-
-                # gradientes de w_j
-                for j in range(d):
-                    grad[j] += (2.0/n) * err * X[i][j]
-                if self.use_bias:
-                    grad_b += (2.0/n) * err
-
-            # L2
-            if self.l2 > 0.0:
-                for j in range(d):
-                    grad[j] += (2.0*self.l2/n) * self.w[j]
-
-            # actualización
-            for j in range(d):
-                self.w[j] -= self.lr * grad[j]
-            if self.use_bias:
-                self.w[-1] -= self.lr * grad_b
-
-            if verbose and (ep % max(1,self.epochs//10) == 0 or ep==1):
-                mse = mse_sum/n
-                print(f"[Epoch {ep:4d}] MSE={mse:.6f}")
-
-# -------------------- Métricas --------------------
-def mae(y, yhat):
-    return sum(abs(a-b) for a,b in zip(y,yhat))/len(y) if y else 0.0
-
-def rmse(y, yhat):
-    return math.sqrt(sum((a-b)*(a-b) for a,b in zip(y,yhat))/len(y)) if y else 0.0
-
-def r2(y, yhat):
-    if not y: return 0.0
-    ym = mean(y)
-    ss_res = sum((a-b)*(a-b) for a,b in zip(y,yhat))
-    ss_tot = sum((a-ym)*(a-ym) for a in y)
-    return 1.0 - (ss_res/(ss_tot if ss_tot>1e-12 else 1.0))
-
-# -------------------- Guardado de predicciones --------------------
-def save_predictions(path, yhat):
-    with open(path, "w", newline='', encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(["y_hat"])
-        for v in yhat:
-            w.writerow([f"{v:.6f}"])
-
-# -------------------- CLI --------------------
 def main():
-    ap = argparse.ArgumentParser(description="Regresión lineal desde cero para COVID (riesgo continuo a partir de DATA_DIED).")
-    ap.add_argument("--csv", required=False, help="Ruta al CSV del dataset.")
+    ap = argparse.ArgumentParser(description="Regresión Lineal FROM SCRATCH (NumPy) con gráficas en pantalla (sin archivos).")
+    ap.add_argument("--csv", type=str, default=None, help="Ruta a CSV que incluya el target.")
+    ap.add_argument("--use-sklearn-data", action="store_true", help="Usar California Housing (solo para datos).")
+    ap.add_argument("--target", type=str, default="MedHouseVal")
     ap.add_argument("--test-size", type=float, default=0.2)
-    ap.add_argument("--max-rows", type=int, default=None, help="Opcional: recorta filas para pruebas rápidas.")
-    ap.add_argument("--lr", type=float, default=0.05)
-    ap.add_argument("--epochs", type=int, default=80)
-    ap.add_argument("--l2", type=float, default=0.0)
-    ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--save-preds", default=None, help="Ruta para guardar y_hat del test en CSV.")
-    ap.add_argument("--no-verbose", action="store_true")
+    ap.add_argument("--random-state", type=int, default=42)
+    ap.add_argument("--standardize", action="store_true")
+    ap.add_argument("--poly-degree", type=int, default=1)
+    ap.add_argument("--solver", type=str, default="normal_equation", choices=["normal_equation","gd"])
+    ap.add_argument("--lr", type=float, default=1e-2)
+    ap.add_argument("--epochs", type=int, default=2000)
+    ap.add_argument("--tol", type=float, default=1e-8)
+    ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--predict-csv", type=str, default=None, help="CSV para predecir en el mismo proceso.")
+    ap.add_argument("--predict-head", type=int, default=5)
     args = ap.parse_args()
 
-    if not args.csv:
-        print("[AVISO] No se proporcionó --csv. Crearé un dataset de juguete para demostrar el pipeline.")
-        # mini dataset sintético (age y un par de flags)
-        X = [
-            [1, 70, 2, 1, 0, 1, 0, 0, 1, 0,0,0,0,1,0, 3,1,1,3],
-            [2, 25, 1, 0, 0, 0, 0, 0, 0, 0,0,0,0,0,0, 3,0,0,2],
-            [1, 55, 2, 1, 0, 0, 0, 0, 1, 0,0,0,0,0,0, 6,0,0,3],
-            [2, 80, 2, 1, 0, 1, 0, 0, 1, 1,1,0,0,0,0, 3,1,1,3],
-            [1, 45, 1, 0, 0, 0, 0, 1, 0, 0,0,0,0,0,1, 2,0,0,1],
-        ]
-        y = [1,0,0,1,0]
-        headers = ["sex","age","patient_type","pneumonia","pregnancy","diabetes","copd","asthma",
-                   "inmsupr","hypertension","cardiovascular","renal_chronic","other_disease",
-                   "obesity","tobacco","medical_unit","intubed","icu","classification"]
+    # Carga datos
+    if args.csv:
+        df = pd.read_csv(args.csv)
+    elif args.use_sklearn_data:
+        df = load_california_df(); args.target = "MedHouseVal"
     else:
-        print("[INFO] Cargando CSV…")
-        X, y, headers = load_csv_build_xy(args.csv, max_rows=args.max_rows)
-        print(f"[INFO] Filas válidas: {len(X)} | Features: {len(headers)}")
+        raise ValueError("Usa --csv <ruta> o --use-sklearn-data")
 
-    Xtr, ytr, Xte, yte = train_test_split(X, y, test_size=args.test_size, seed=args.seed)
-    print(f"[INFO] Split -> Train: {len(Xtr)} | Test: {len(Xte)}")
+    X, y, feat_names = load_Xy_from_df(df, args.target)
 
-    # estandarizamos TODO (todas las columnas en este ejemplo)
-    Xtr_std, means, stds = standardize_train(Xtr)
-    Xte_std = standardize_apply(Xte, means, stds)
+    # Polinomios
+    X_poly, poly_names = polynomial_features(X, feat_names, degree=args.poly_degree)
 
-    model = LinearRegressionGD(lr=args.lr, epochs=args.epochs, l2=args.l2, seed=args.seed, use_bias=True)
-    model.fit(Xtr_std, ytr, verbose=(not args.no_verbose))
+    # Split
+    Xtr, Xte, ytr, yte = train_test_split_scratch(X_poly, y, test_size=args.test_size, random_state=args.random_state)
 
-    yhat_tr = model.predict(Xtr_std)
-    yhat_te = model.predict(Xte_std)
+    # Escalar
+    scaler = None
+    if args.standardize:
+        scaler = StandardScalerScratch()
+        Xtr = scaler.fit_transform(Xtr)
+        Xte = scaler.transform(Xte)
 
-    print("\n===== MÉTRICAS (Train) =====")
-    print(f"MAE={mae(ytr,yhat_tr):.4f} | RMSE={rmse(ytr,yhat_tr):.4f} | R2={r2(ytr,yhat_tr):.4f}")
+    # Entrenar
+    model = LinearRegressionScratch(solver=args.solver, lr=args.lr, epochs=args.epochs, tol=args.tol, verbose=args.verbose)
+    model.fit(Xtr, ytr)
+    yhat = model.predict(Xte)
+    metrics = evaluate(yte, yhat)
 
-    print("\n===== MÉTRICAS (Test) =====")
-    print(f"MAE={mae(yte,yhat_te):.4f} | RMSE={rmse(yte,yhat_te):.4f} | R2={r2(yte,yhat_te):.4f}")
+    print("=== Linear Regression (Scratch) ===")
+    print(f"Filas: total={len(df)} | train={len(Xtr)} | test={len(Xte)}")
+    print(f"Target: {args.target}")
+    print(f"Solver: {args.solver} | lr={args.lr} | epochs={args.epochs} | tol={args.tol}")
+    print(f"Standardize={args.standardize} | poly_degree={args.poly_degree}")
+    print("\nMétricas TEST:")
+    for k,v in metrics.items(): print(f"- {k}: {v:.6f}")
 
-    # Mostrar algunas predicciones como "riesgo continuo"
-    print("\nEjemplos de predicción (y_real -> y_hat):")
-    for i in range(min(10, len(yte))):
-        print(f"{yte[i]:.0f} -> {yhat_te[i]:.4f}")
+    # Gráficas
+    plot_parity(yte, yhat)
+    plot_residuals_vs_pred(yte, yhat)
+    plot_residual_hist(yte, yhat)
+    plot_top_coefficients(model.coef_(), poly_names, k=15)
+    plot_learning_curve_scratch(Xtr, ytr, Xte, yte, solver=args.solver, lr=args.lr, epochs=args.epochs, tol=args.tol)
 
-    if args.save_preds:
-        save_predictions(args.save_preds, yhat_te)
-        print(f"\n[OK] Predicciones guardadas en: {args.save_preds}")
+    # Predicción inmediata (opcional, en consola)
+    if args.predict_csv:
+        new_df = pd.read_csv(args.predict_csv)
+        missing = [c for c in feat_names if c not in new_df.columns]
+        if missing: raise ValueError(f"Faltan columnas en el CSV: {missing}")
+        X_new = new_df[feat_names].to_numpy(dtype=float)
+        # aplicar las mismas transf.
+        X_new, _names_new = polynomial_features(X_new, feat_names, degree=args.poly_degree)
+        if args.standardize: X_new = (X_new - scaler.mean_) / scaler.std_
+        preds = model.predict(X_new)
+        out = pd.DataFrame({"prediction": preds})
+        print("\nPredicciones (primeras filas):")
+        print(out.head(args.predict_head).to_string(index=False))
+
 
 if __name__ == "__main__":
     main()

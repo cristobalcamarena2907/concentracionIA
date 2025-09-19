@@ -16,7 +16,7 @@ if not os.path.exists(extract_dir):
         zip_ref.extractall(extract_dir)
 
 # Buscar registros disponibles
-hea_files = glob.glob(os.path.join(extract_dir, "**", "*.hea"), recursive=True)
+hea_files = glob.glob(os.path.join(extract_dir, "**", "122.hea"), recursive=True)
 if len(hea_files) == 0:
     raise FileNotFoundError("No encontré archivos .hea en la carpeta extraída")
 
@@ -33,7 +33,7 @@ print(f"\nUsando el registro: {first_record}")
 # 2) Leer señal
 # ====================================================
 record = wfdb.rdrecord(os.path.join(record_dir, first_record))
-data_raw = record.p_signal[:,0]   # canal 1
+data_raw = record.p_signal[:,1]   # canal 1
 fs = record.fs
 print(f"Frecuencia de muestreo original: {fs} Hz")
 print(f"Tamaño de la señal: {len(data_raw)} muestras")
@@ -57,7 +57,7 @@ def quantize(signal, levels):
     indices = np.digitize(signal, q) - 1
     return q[indices]
 
-data_digitized = quantize(data_subsampled, levels=16)
+data_digitized = quantize(data_subsampled, levels=64)
 
 # ====================================================
 # 5) Filtro de Kalman (ajustado)
@@ -65,7 +65,7 @@ data_digitized = quantize(data_subsampled, levels=16)
 A = np.array([[1, 1], [0, 1]])
 H = np.array([[1, 0]])
 Q = np.array([[1e-3, 0], [0, 1e-3]])
-R = 0.5
+R = 0.1
 
 x = np.zeros((2, 1))
 P = np.eye(2)

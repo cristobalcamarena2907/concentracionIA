@@ -1,0 +1,6 @@
+Umbral: 0.5171
+Recall objetivo: 0.80
+ROC-AUC: 0.9424
+PR AUC: 0.6399
+Balanced Accuracy: 0.8586
+MCC: 0.4624

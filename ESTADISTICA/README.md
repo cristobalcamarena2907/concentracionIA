@@ -1,7 +1,5 @@
 # 📊 Módulo de Estadística
 
-Este módulo concentra las actividades y proyectos realizados en el curso de **Estadística**
-
 ---
 
 ## 📂 Contenido

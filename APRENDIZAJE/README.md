@@ -9,6 +9,13 @@ Ambos modelos muestran métricas de evaluación y gráficas de diagnóstico.
 
 ---
 
+## Correciones
+ - Se cambió el modelo de Random Forest (clasificación) a Regresión Lineal, acorde a las especificaciones reales del proyecto.
+ - Se añadió la opción de pasar la ruta del CSV como argumento de consola.
+ - Se implementó la separación en conjuntos de entrenamiento y prueba con métricas claras (MSE, R²).
+
+---
+
 ## ⚙️ Requisitos
 
 Antes de correr los programas, instala las dependencias en un entorno virtual (opcional pero recomendado):

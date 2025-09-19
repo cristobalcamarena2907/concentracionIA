@@ -1,33 +1,26 @@
-# 📘 Regresión Lineal con y sin librerías
 
-Este proyecto implementa un modelo de **Regresión Lineal** para el dataset **California Housing**, usando dos enfoques:
+# Repositorio de Inteligencia artificial avanzada para la ciencia de datos I
 
-1. **Con librerías (scikit-learn)** → más práctico y eficiente.  
-2. **From scratch (NumPy puro)** → implementado manualmente para entender la matemática detrás.
-
-Ambos modelos muestran métricas de evaluación y gráficas de diagnóstico.
+Este repositorio reúne los diferentes módulos cursados durante el semestre, organizados en carpetas independientes.  
+Cada carpeta corresponde a un módulo y contiene actividades y proyectos desarrollados.
 
 ---
 
-## ⚙️ Requisitos
+## Estructura del Repositorio
 
-Antes de correr los programas, instala las dependencias en un entorno virtual (opcional pero recomendado):
+- **APRNDIZAJE**  
+  Actividades y entregables relacionados con el módulo de Aprendizaje.  
 
-```bash
-python -m venv .venv
-source .venv/bin/activate     # macOS / Linux
-# En Windows (PowerShell):
-# .venv\Scripts\Activate.ps1
+- **ESTADISTICA**  
+  Notebooks realizados en el módulo de Estadística aplicada.  
 
-pip install numpy pandas matplotlib scikit-learn
-```
-1. Modelo con librerías
+- **HARDWARE**  
+  Actividades vinculadas con arquitectura y componentes de hardware.  
 
-```
-python sklearn-model.py --model ridge --alpha 5.0 --standardize
-```
+- **RETO**  
+  Carpeta destinada al reto principal del semestre.  
 
-2. Modelo sin librerías
-```
-python scratch-model.py --use-sklearn-data --solver normal_equation --standardize
-```
+- **SOFTWARE**  
+  Desarrollo del módulo de Software.
+
+---

@@ -2,7 +2,7 @@
 # Repositorio de Inteligencia artificial avanzada para la ciencia de datos I
 
 Este repositorio reúne los diferentes módulos cursados durante el semestre, organizados en carpetas independientes.  
-Cada carpeta corresponde a un módulo y contiene actividades y proyectos desarrollados. También incluye un README con especificaciones de las actividades y proyectos realizados.
+Cada carpeta corresponde a un módulo y contiene actividades y proyectos desarrollados. También cada carpeta incluye un README con especificaciones de las actividades y proyectos realizados.
 
 ---
 

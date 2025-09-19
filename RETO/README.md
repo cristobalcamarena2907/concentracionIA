@@ -6,11 +6,7 @@ El objetivo principal fue diseñar, implementar y evaluar un modelo de machine l
 
 ---
 
-## 📂 Contenido de la Carpeta
-
-- **Act. Introductoria/**
-  - `Act R1.ipynb` → Actividad inicial de exploración.  
-  - `Feedback Moment Gildardo.pdf` → Retroalimentación del profesor.  
+## 📂 Contenido
 
 - **Implementacion/**
   - `fraud_detection.py` → Script principal con el pipeline de entrenamiento y predicción.  
